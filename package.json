@@ -1,6 +1,6 @@
 {
   "license": "GPL-3.0",
-  "name": "dgg0sc",
+  "name": "drx0sc",
   "version": "0.1.0",
   "scripts": {
     "build": "hardhat compile",
