@@ -246,11 +246,8 @@ contract DripstaX is
         projectDistributor = _to;
     }
 
-    function ADMIN_closeMinting() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        isMintingPermanentlyDisabled = true;
-    }
-
     function ADMIN_openTrading() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        isMintingPermanentlyDisabled = true;
         tradingOpen = true;
     }
 
