@@ -55,7 +55,6 @@ contract DripstaX is
         IAmmFactory _factory,
         address _rewardsDistributor,
         uint256 _baseCzusdLocked,
-        uint256 _totalSupply,
         address _projectDistributor
     ) ERC20PresetMinterPauser("DripstaX", "DRX") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -184,6 +183,11 @@ contract DripstaX is
         }
     }
 
+    function mint(address to, uint256 amount) public override onlyRole(MINTER_ROLE) {
+        require(!isMintingPermanentlyDisabled,"DRX: Minting permanently disabled.");
+        _mint(to, amount);
+    }
+
     function MANAGER_setIsExempt(address _for, bool _to)
         public
         onlyRole(MANAGER)
@@ -208,6 +212,10 @@ contract DripstaX is
         onlyRole(MANAGER)
     {
         projectDistributor = _to;
+    }
+
+    function ADMIN_closeMinting() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        isMintingPermanentlyDisabled = true;
     }
 
     function ADMIN_openTrading() external onlyRole(DEFAULT_ADMIN_ROLE) {
