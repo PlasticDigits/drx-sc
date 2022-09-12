@@ -29,6 +29,8 @@ contract DripstaX is
 
     bool public isMintingPermanentlyDisabled = false;
 
+    mapping(address=>uint64) public firstBuyEpoch;
+
     Checkpoints.History totalSupplyHistory;
 
     IERC20 public constant BUSD =
@@ -180,6 +182,8 @@ contract DripstaX is
     ) internal override {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
+
+        if(balanceOf(recipient)==0&&amount>0) firstBuyEpoch[recipient] = uint64(block.timestamp);
 
         //Handle burn
         if (
