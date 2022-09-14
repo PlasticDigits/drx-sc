@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+
 contract ReferralCodeRegistry {
     using SafeERC20 for IERC20;
 
@@ -21,7 +22,7 @@ contract ReferralCodeRegistry {
         IERC20(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
 
     function isValidNewCode(string calldata _code) public view returns (bool) {
-        return !isCodeRegistered(_code);
+        return !isCodeRegistered(_code) && keccak256(abi.encodePacked('')) == keccak256(abi.encodePacked(_code));
     }
 
     function isCodeRegistered(string calldata _code)
@@ -40,18 +41,24 @@ contract ReferralCodeRegistry {
     }
 
     function register(string calldata _code) public {
-        require(isValidNewCode(_code), "RabbitCreed: Not valid new code");
+        require(isValidNewCode(_code), "RCR: Not valid new code");
         unregister();
         codeToAccount[_code] = msg.sender;
         accountToCode[msg.sender] = _code;
         emit CodeRegistered(msg.sender, _code);
     }
 
-    function addRewards(string calldata _code, uint256 _wad) external {
-        require(isCodeRegistered(_code), "RabbitCreed: Code not registered");
+    function addRewardsViaCode(string calldata _code, uint256 _wad) external {
+        require(isCodeRegistered(_code), "RCR: Code not registered");
         BUSD.transferFrom(msg.sender,address(this),_wad);
         busdClaimable[codeToAccount[_code]] += _wad;
         emit RewardsAdded(codeToAccount[_code],_wad);
+    }
+
+    function addRewardsViaAccount(address _account, uint256 _wad) external {
+        BUSD.transferFrom(msg.sender,address(this),_wad);
+        busdClaimable[_account] += _wad;
+        emit RewardsAdded(_account,_wad);
     }
 
     function claimRewards() external {
