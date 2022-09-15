@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-
 contract ReferralCodeRegistry {
     using SafeERC20 for IERC20;
 
@@ -22,7 +21,10 @@ contract ReferralCodeRegistry {
         IERC20(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
 
     function isValidNewCode(string calldata _code) public view returns (bool) {
-        return !isCodeRegistered(_code) && keccak256(abi.encodePacked('')) == keccak256(abi.encodePacked(_code));
+        return
+            !isCodeRegistered(_code) &&
+            keccak256(abi.encodePacked("")) ==
+            keccak256(abi.encodePacked(_code));
     }
 
     function isCodeRegistered(string calldata _code)
@@ -50,21 +52,21 @@ contract ReferralCodeRegistry {
 
     function addRewardsViaCode(string calldata _code, uint256 _wad) external {
         require(isCodeRegistered(_code), "RCR: Code not registered");
-        BUSD.transferFrom(msg.sender,address(this),_wad);
+        BUSD.transferFrom(msg.sender, address(this), _wad);
         busdClaimable[codeToAccount[_code]] += _wad;
-        emit RewardsAdded(codeToAccount[_code],_wad);
+        emit RewardsAdded(codeToAccount[_code], _wad);
     }
 
     function addRewardsViaAccount(address _account, uint256 _wad) external {
-        BUSD.transferFrom(msg.sender,address(this),_wad);
+        BUSD.transferFrom(msg.sender, address(this), _wad);
         busdClaimable[_account] += _wad;
-        emit RewardsAdded(_account,_wad);
+        emit RewardsAdded(_account, _wad);
     }
 
     function claimRewards() external {
         uint256 wad = busdClaimable[msg.sender];
         delete busdClaimable[msg.sender];
-        BUSD.transfer(msg.sender,wad);
-        emit RewardsClaimed(msg.sender,wad);
+        BUSD.transfer(msg.sender, wad);
+        emit RewardsClaimed(msg.sender, wad);
     }
 }

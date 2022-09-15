@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0
-// Authored by Plastic Digits 
+// Authored by Plastic Digits
 pragma solidity ^0.8.4;
-import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetMinterPauser.sol";
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
-import "@openzeppelin/contracts/utils/Checkpoints.sol";
 import "./czodiac/CZUSD.sol";
 import "./AutoRewardPool.sol";
+import "./AutoRewardPoolDrz.sol";
 import "./libs/AmmLibrary.sol";
 import "./interfaces/IAmmFactory.sol";
 import "./interfaces/IAmmPair.sol";
@@ -20,27 +19,23 @@ contract DripstaX is
     KeeperCompatibleInterface
 {
     using SafeERC20 for IERC20;
-    using Address for address payable;
-    using Checkpoints for Checkpoints.History;
     bytes32 public constant MANAGER = keccak256("MANAGER");
     AutoRewardPool public drxRewardsDistributor;
-    address public drzRewardsDistributor;
+    AutoRewardPoolDrz public drzRewardsDistributor;
     address public projectDistributor;
 
     bool public isMintingPermanentlyDisabled = false;
 
-    mapping(address=>uint64) public firstBuyEpoch;
-
-    Checkpoints.History totalSupplyHistory;
+    mapping(address => uint64) public firstBuyEpoch;
 
     IERC20 public constant BUSD =
         IERC20(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
 
-    uint256 public drxBurnBPS_buy  = 500;
+    uint256 public drxBurnBPS_buy = 500;
     uint256 public drxBurnBPS_sell = 800;
-    uint256 public drzBurnBPS_buy  = 200;
+    uint256 public drzBurnBPS_buy = 200;
     uint256 public drzBurnBPS_sell = 300;
-    uint256 public devBurnBPS_buy  = 300;
+    uint256 public devBurnBPS_buy = 300;
     uint256 public devBurnBPS_sell = 400;
     uint256 public maxBurnBPS = 3500;
     mapping(address => bool) public isExempt;
@@ -54,7 +49,6 @@ contract DripstaX is
     uint256 public lockedCzusdTriggerLevel = 100 ether;
 
     bool public tradingOpen;
-
 
     constructor(
         CZUsd _czusd,
@@ -76,7 +70,7 @@ contract DripstaX is
         ADMIN_setBaseCzusdLocked(_baseCzusdLocked);
         MANAGER_setProjectDistributor(_projectDistributor);
         ADMIN_setDrxRewardsDistributor(_drxRewardsDistributor);
-        MANAGER_setDrzRewardsDistributor(_drzRewardsDistributor);
+        ADMIN_setDrzRewardsDistributor(_drzRewardsDistributor);
 
         MANAGER_setIsExempt(msg.sender, true);
         MANAGER_setIsExempt(_drxRewardsDistributor, true);
@@ -85,7 +79,6 @@ contract DripstaX is
         ammCzusdPair = IAmmPair(
             _factory.createPair(address(this), address(czusd))
         );
-        totalSupplyHistory.push(totalSupply());
     }
 
     function lockedCzusd() public view returns (uint256 lockedCzusd_) {
@@ -122,14 +115,6 @@ contract DripstaX is
         return lockedCzusdTriggerLevel <= availableWadToSend();
     }
 
-    function getTotalSupplyAtBlock(uint256 _blockNumber)
-        external
-        view
-        returns (uint256 wad_)
-    {
-        return totalSupplyHistory.getAtBlock(_blockNumber);
-    }
-
     function checkUpkeep(bytes calldata)
         public
         view
@@ -160,19 +145,15 @@ contract DripstaX is
             (BUSD.balanceOf(address(this)) * drxBurnBPS_buy) / totalBurnBPS
         );
         BUSD.transfer(
-            drzRewardsDistributor,
+            address(drzRewardsDistributor),
             (BUSD.balanceOf(address(this)) * drzBurnBPS_buy) / totalBurnBPS
         );
         BUSD.transfer(
             address(projectDistributor),
             BUSD.balanceOf(address(this))
         );
-        //TODO: Update the rps for drx, drz reward distributors
-    }
-
-    function _burn(address _sender, uint256 _burnAmount) internal override {
-        super._burn(_sender, _burnAmount);
-        totalSupplyHistory.push(totalSupply());
+        drxRewardsDistributor.updateNow();
+        drzRewardsDistributor.updateNow();
     }
 
     function _transfer(
@@ -183,14 +164,18 @@ contract DripstaX is
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
 
-        if(balanceOf(recipient)==0&&amount>0) firstBuyEpoch[recipient] = uint64(block.timestamp);
+        if (balanceOf(recipient) == 0 && amount > 0)
+            firstBuyEpoch[recipient] = uint64(block.timestamp);
 
         //Handle burn
         if (
             //Check if exempt wallet is buy/sell
-            isExempt[sender] || isExempt[recipient] || 
+            isExempt[sender] ||
+            isExempt[recipient] ||
             //Check if not buy/sell: if not buy sell, no burn.
-            (sender!=address(ammCzusdPair) && recipient != address(ammCzusdPair))) {
+            (sender != address(ammCzusdPair) &&
+                recipient != address(ammCzusdPair))
+        ) {
             super._transfer(sender, recipient, amount);
 
             //Update the holdings for autostaking.
@@ -199,8 +184,10 @@ contract DripstaX is
         } else {
             require(tradingOpen, "DRX: Not open");
             //If its not buy, its a sell since the check in the if() makes sure buy or sell
-            bool isBuy = sender == address(ammCzusdPair); 
-            uint256 burnBPS = isBuy ? drxBurnBPS_buy + drzBurnBPS_buy + devBurnBPS_buy : drxBurnBPS_sell + drzBurnBPS_sell + devBurnBPS_sell;
+            bool isBuy = sender == address(ammCzusdPair);
+            uint256 burnBPS = isBuy
+                ? drxBurnBPS_buy + drzBurnBPS_buy + devBurnBPS_buy
+                : drxBurnBPS_sell + drzBurnBPS_sell + devBurnBPS_sell;
             uint256 burnAmount = (amount * burnBPS) / 10000;
             if (burnAmount > 0) _burn(sender, burnAmount);
             uint256 postBurnAmount = amount - burnAmount;
@@ -212,8 +199,15 @@ contract DripstaX is
         }
     }
 
-    function mint(address to, uint256 amount) public override onlyRole(MINTER_ROLE) {
-        require(!isMintingPermanentlyDisabled,"DRX: Minting permanently disabled.");
+    function mint(address to, uint256 amount)
+        public
+        override
+        onlyRole(MINTER_ROLE)
+    {
+        require(
+            !isMintingPermanentlyDisabled,
+            "DRX: Minting permanently disabled."
+        );
         _mint(to, amount);
         drxRewardsDistributor.deposit(to, amount);
     }
@@ -225,22 +219,29 @@ contract DripstaX is
         isExempt[_for] = _to;
     }
 
-    function MANAGER_setBps(uint256 _drxBurnBPS_buy, uint256 _drzBurnBPS_buy, uint256 _devBurnBPS_buy, uint256 _drxBurnBPS_sell, uint256 _drzBurnBPS_sell, uint256 _devBurnBPS_sell) public onlyRole(MANAGER) {
-        require(_drxBurnBPS_buy+_drzBurnBPS_buy+_devBurnBPS_buy <= maxBurnBPS, "DRX: Buy Burn too high");
-        require(_drxBurnBPS_sell+_drzBurnBPS_sell+_devBurnBPS_sell <= maxBurnBPS, "DRX: Sell Burn too high");
+    function MANAGER_setBps(
+        uint256 _drxBurnBPS_buy,
+        uint256 _drzBurnBPS_buy,
+        uint256 _devBurnBPS_buy,
+        uint256 _drxBurnBPS_sell,
+        uint256 _drzBurnBPS_sell,
+        uint256 _devBurnBPS_sell
+    ) public onlyRole(MANAGER) {
+        require(
+            _drxBurnBPS_buy + _drzBurnBPS_buy + _devBurnBPS_buy <= maxBurnBPS,
+            "DRX: Buy Burn too high"
+        );
+        require(
+            _drxBurnBPS_sell + _drzBurnBPS_sell + _devBurnBPS_sell <=
+                maxBurnBPS,
+            "DRX: Sell Burn too high"
+        );
         drxBurnBPS_buy = _drxBurnBPS_buy;
         drzBurnBPS_buy = _drzBurnBPS_buy;
         devBurnBPS_buy = _devBurnBPS_buy;
         drxBurnBPS_sell = _drxBurnBPS_sell;
         drzBurnBPS_sell = _drzBurnBPS_sell;
         devBurnBPS_sell = _devBurnBPS_sell;
-    }
-
-    function MANAGER_setDrzRewardsDistributor(address _to)
-        public
-        onlyRole(MANAGER)
-    {
-        drzRewardsDistributor = _to;
     }
 
     function MANAGER_setProjectDistributor(address _to)
@@ -263,13 +264,6 @@ contract DripstaX is
             _msgSender(),
             IERC20(tokenAddress).balanceOf(address(this))
         );
-    }
-
-    function ADMIN_withdraw(address payable _to)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        _to.sendValue(address(this).balance);
     }
 
     function ADMIN_setBaseCzusdLocked(uint256 _to)
@@ -309,5 +303,19 @@ contract DripstaX is
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         drxRewardsDistributor = AutoRewardPool(_to);
+    }
+
+    function ADMIN_setDrzRewardsDistributor(address _to)
+        public
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        drzRewardsDistributor = AutoRewardPoolDrz(_to);
+    }
+
+    function ADMIN_setAmmCzusdPair(IAmmPair _to)
+        public
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        ammCzusdPair = _to;
     }
 }

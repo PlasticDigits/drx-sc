@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./libs/IterableArrayWithoutDuplicateKeys.sol";
 
-contract AutoRewardPool is Ownable, ReentrancyGuard {
+contract AutoRewardPoolDrz is Ownable, ReentrancyGuard {
     using IterableArrayWithoutDuplicateKeys for IterableArrayWithoutDuplicateKeys.Map;
 
     using SafeERC20 for IERC20;
@@ -38,7 +38,6 @@ contract AutoRewardPool is Ownable, ReentrancyGuard {
     uint256 public period = 7 days;
 
     address public feeDistributor;
-    address public drxLock;
 
     mapping(address => uint256) public combinedStakedBalance;
 
@@ -65,20 +64,14 @@ contract AutoRewardPool is Ownable, ReentrancyGuard {
     //wants autoclaim
     IterableArrayWithoutDuplicateKeys.Map autoclaimAccounts;
 
-    function initialize(
-        IERC20 _stakedToken,
-        address _czusdPair,
-        address _feeDistributor,
-        address _drxLock
-    ) external onlyOwner {
+    function initialize(IERC20 _stakedToken, address _feeDistributor)
+        external
+        onlyOwner
+    {
         require(!isInitialized);
         isInitialized = true;
         feeDistributor = _feeDistributor;
         stakedToken = _stakedToken;
-        drxLock = _drxLock;
-        isRewardExempt[_czusdPair] = true;
-        isRewardExempt[_drxLock] = true;
-        isRewardExempt[msg.sender] = true;
 
         PRECISION_FACTOR = uint256(
             10 **
@@ -97,16 +90,6 @@ contract AutoRewardPool is Ownable, ReentrancyGuard {
 
     function withdraw(address _account, uint256 _amount) external {
         require(msg.sender == address(stakedToken), "ARP: Must be stakedtoken");
-        _withdraw(_account, _amount);
-    }
-
-    function depositViaLock(address _account, uint256 _amount) external {
-        require(msg.sender == address(drxLock), "ARP: Must be drxLock");
-        _deposit(_account, _amount);
-    }
-
-    function withdrawViaLock(address _account, uint256 _amount) external {
-        require(msg.sender == address(drxLock), "ARP: Must be drxLock");
         _withdraw(_account, _amount);
     }
 
@@ -244,6 +227,14 @@ contract AutoRewardPool is Ownable, ReentrancyGuard {
                 PRECISION_FACTOR -
                 userRewardDebt[_user];
         }
+    }
+
+    function airdrop(uint256 _wad) external {
+        _updatePool();
+        rewardToken.safeTransferFrom(msg.sender, address(this), _wad);
+        accTokenPerShare =
+            accTokenPerShare +
+            ((_wad * PRECISION_FACTOR) / totalStaked);
     }
 
     function updateNow() external {
