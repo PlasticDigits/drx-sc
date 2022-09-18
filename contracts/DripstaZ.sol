@@ -107,7 +107,7 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
     }
 
     function withdrawBusd(uint256 _drzWad) external {
-        drx.burnFrom(msg.sender,_drzWad);
+        burnFrom(msg.sender,_drzWad);
         initialCzusdBal = CZUSD.balanceOf(address(this));
         initialBusdBal = BUSD.balanceOf(address(this));
 
