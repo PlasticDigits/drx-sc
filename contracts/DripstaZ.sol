@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetMinterPauser.sol"
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "./interfaces/IAmmPair.sol";
 import "./interfaces/IAmmRouter02.sol";
+import "./interfaces/ICurve.sol";
 import "./AutoRewardPoolDrz.sol";
 
 contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
@@ -17,11 +18,13 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
         IERC20(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
     IERC20 public constant CZUSD =
         IERC20(0xE68b79e51bf826534Ff37AA9CeE71a3842ee9c70);
+    ICurve public czusdBusdPairEps =
+        ICurve(0x4d9508257Af7442827951f30dbFe3ee2a04ADCeE);
     IERC20 public drx;
     AutoRewardPoolDrz public rewardPoolDrz;
 
-    IAmmPair public ammCzusdPair;
-    IAmmRouter02 public ammRouter;
+    IAmmPair public ammCzusdPair = IAmmPair(0xd7C6Fc00FAe64cb7D242186BFD21e31C5b175671);
+    IAmmRouter02 public ammRouter = IAmmRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
     uint256 public fee_airdropBps = 200;
     uint256 public fee_rewardPoolBps = 500;
@@ -32,8 +35,6 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
 
     constructor(
         IERC20 _drx,
-        IAmmPair _ammCzusdPair,
-        IAmmRouter02 _ammRouter,
         AutoRewardPoolDrz _rewardPoolDrz
     ) ERC20PresetMinterPauser("DripstaZ", "DRZ") {
         //NOTE: This contract should be exempted from DRX fees.
@@ -43,8 +44,6 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
         _grantRole(PAUSER_ROLE, msg.sender);
 
         drx = _drx;
-        ADMIN_setAmmRouter(_ammRouter);
-        ADMIN_setAmmCzusdPair(_ammCzusdPair);
         ADMIN_setRewardPoolDrz(_rewardPoolDrz);
     }
 
@@ -54,17 +53,8 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
 
         //Swap busd for czusd
         //TODO: Use ellipsis instead for lower slippage
-        address[] memory path;
-        path[0] = address(BUSD);
-        path[1] = address(CZUSD);
-        BUSD.approve(address(ammRouter), _wad);
-        ammRouter.swapExactTokensForTokens(
-            _wad,
-            (_wad * (10000 - maxAmmSlippage)) / 10000,
-            path,
-            address(this),
-            block.timestamp
-        );
+        BUSD.approve(address(czusdBusdPairEps), _wad);
+        czusdBusdPairEps.exchange(1, 0, _wad, (_wad * (10000 - maxAmmSlippage)) / 10000);
 
         //Figure out where the CZUSD should go.
         uint256 czusdBal = CZUSD.balanceOf(address(this));
@@ -170,13 +160,20 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         ammRouter = _to;
-    }
+    }czusdBusdPairEps
 
     function ADMIN_setAmmCzusdPair(IAmmPair _to)
         public
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         ammCzusdPair = _to;
+    }
+
+    function ADMIN_setCzusdBusdPairEps(ICurve _to)
+        public
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        czusdBusdPairEps = _to;
     }
 
     function ADMIN_setMaxFeeBps(uint256 _to)
