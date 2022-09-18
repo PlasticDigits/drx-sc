@@ -26,9 +26,10 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
     IAmmPair public ammCzusdPair = IAmmPair(0xd7C6Fc00FAe64cb7D242186BFD21e31C5b175671);
     IAmmRouter02 public ammRouter = IAmmRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
+    // To reduce gas costs, fees are actually slightly less than set as the lp fee is taken either first or second.
     uint256 public fee_airdropBps = 200;
     uint256 public fee_rewardPoolBps = 500;
-    uint256 public fee_lockedLpBps = 309; //This is taken out after lp is minted. (309=3.00%)
+    uint256 public fee_lockedLpBps = 300;
     uint256 public maxFeeBps = 3500;
 
     uint256 public maxAmmSlippage = 100;
@@ -52,7 +53,6 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
         BUSD.transferFrom(msg.sender, address(this), _wad);
 
         //Swap busd for czusd
-        //TODO: Use ellipsis instead for lower slippage
         BUSD.approve(address(czusdBusdPairEps), _wad);
         czusdBusdPairEps.exchange(1, 0, _wad, (_wad * (10000 - maxAmmSlippage)) / 10000);
 
@@ -106,7 +106,58 @@ contract DripstaZ is AccessControlEnumerable, ERC20PresetMinterPauser {
         _mint(msg.sender, liqMinted - lockedLiquidity);
     }
 
-    //TODO: Withdraw BUSD
+    function withdrawBusd(uint256 _drzWad) external {
+        drx.burnFrom(msg.sender,_drzWad);
+        initialCzusdBal = CZUSD.balanceOf(address(this));
+        initialBusdBal = BUSD.balanceOf(address(this));
+
+        //Send locked liquidity portion to drx contract
+        uint256 lockedLiquidity = (_drzWad * fee_lockedLpBps) / 10000;
+        ammCzusdPair.transfer(address(drx), lockedLiquidity);
+
+        //Remove the drx/czusd liquiidity
+        ammCzusdPair.removeLiquidity(
+        drx,//address tokenA,
+        CZUSD,//address tokenB,
+        _drzWad - lockedLiquidity,//uint256 liquidity,
+        0,//uint256 amountAMin,
+        0,//uint256 amountBMin,
+        address(this),//address to,
+        block.timestamp//uint256 deadline
+        );
+
+        //Swap the drx to CZUSD
+        uint256 drxBal = drx.balanceOf(address(this));
+        path[0] = address(drx);
+        path[1] = address(CZUSD);
+        drx.approve(address(ammRouter), drxBal);
+        ammRouter.swapExactTokensForTokens(
+            drxBal,
+            0,
+            path,
+            address(this),
+            block.timestamp
+        );        
+
+        //Figure out where the CZUSD should go.
+        uint256 czusdSwapped = CZUSD.balanceOf(address(this)) - initialCzusdBal;
+        uint256 airdropFee = (czusdSwapped * fee_airdropBps) / 10000;
+        uint256 rewardPoolFee = (czusdSwapped * fee_rewardPoolBps) / 10000;
+        uint256 swapToBusd = czusdSwapped - airdropFee - rewardPoolFee;
+
+        //Send the CZUSD for fees
+        CZUSD.transfer(address(rewardPoolDrz), rewardPoolFee);
+        CZUSD.approve(address(rewardPoolDrz), airdropFee);
+        //Airdrop will first call updatePool, which will add the rewardPoolFee to rewardPerSecond.
+        rewardPoolDrz.airdrop(airdropFee);
+
+        //Swap czusd for busd
+        CZUSD.approve(address(czusdBusdPairEps), swapToBusd);
+        czusdBusdPairEps.exchange(0, 1, swapToBusd, (swapToBusd * (10000 - maxAmmSlippage)) / 10000);
+
+        //Return BUSD to sender.
+        BUSD.transfer(msg.sender,initialBusdBal-BUSD.balanceOf(address(this)))
+    }
 
     function _transfer(
         address sender,
